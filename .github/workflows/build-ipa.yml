@@ -28,9 +28,10 @@ jobs:
           set -euo pipefail
 
           THEOS_DIR="$RUNNER_TEMP/theos"
+          export THEOS="$THEOS_DIR"
           echo "THEOS=$THEOS_DIR" >> "$GITHUB_ENV"
 
-          git clone --depth=1 --recursive https://github.com/theos/theos.git "$THEOS_DIR"
+          git clone --depth=1 --recursive https://github.com/theos/theos.git "$THEOS"
 
           ARCH="$(uname -m)"
           curl --fail --location --silent --show-error \
