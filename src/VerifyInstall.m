@@ -47,7 +47,22 @@ BOOL hasDoneUpdate = NO;
 															preferredStyle:UIAlertControllerStyleAlert];
 
 	UIAlertAction* launchAction = [UIAlertAction actionWithTitle:@"common.ok".loc style:UIAlertActionStyleDefault handler:^(UIAlertAction* _Nonnull action) {
-		BOOL canLaunch = [VerifyInstall canLaunchAppWithBundleID:@"com.robtop.geometryjump"];
+		BOOL canLaunch = NO;
+		if (NSClassFromString(@"LCSharedUtils")) {
+			// A private LiveContainer app is not registered with iOS's normal
+			// application workspace. Verify its local bundle metadata instead.
+			NSURL* appURL = [[LCPath bundlePath] URLByAppendingPathComponent:[Utils gdBundleName] isDirectory:YES];
+			NSString* infoPath = [[appURL URLByAppendingPathComponent:@"LCAppInfo.plist"] path];
+			NSDictionary* appInfo = [NSDictionary dictionaryWithContentsOfFile:infoPath];
+			NSString* dataUUID = appInfo[@"LCDataUUID"];
+			BOOL isDirectory = NO;
+			canLaunch = [[NSFileManager defaultManager] fileExistsAtPath:appURL.path isDirectory:&isDirectory]
+				&& isDirectory
+				&& [dataUUID isKindOfClass:[NSString class]]
+				&& dataUUID.length > 0;
+		} else {
+			canLaunch = [VerifyInstall canLaunchAppWithBundleID:@"com.robtop.geometryjump"];
+		}
 		if (!canLaunch) {
 			UIAlertController* resultAlert = [UIAlertController alertControllerWithTitle:@"Error" message:@"launcher.verify-gd.error".loc
 																		  preferredStyle:UIAlertControllerStyleAlert];
