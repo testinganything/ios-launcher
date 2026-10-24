@@ -15,10 +15,56 @@
 BOOL hasDoneUpdate = NO;
 
 @implementation VerifyInstall
+
+// Returns YES if a Geometry Dash bundle is present under LiveContainer's managed Applications path.
+// This is the correct way to detect a private GD installation inside LiveContainer.
++ (BOOL)isGDPresentInLiveContainer {
+	if (![Utils isSandboxed])
+		return NO;
+
+	NSFileManager* fm = [NSFileManager defaultManager];
+	NSURL* bundlePath = [LCPath bundlePath];
+
+	// Primary expected name used by the launcher
+	NSURL* primary = [bundlePath URLByAppendingPathComponent:[Utils gdBundleName] isDirectory:YES];
+	BOOL isDir = NO;
+	if ([fm fileExistsAtPath:primary.path isDirectory:&isDir] && isDir) {
+		// Basic sanity: look for the main executable or Info.plist
+		if ([fm fileExistsAtPath:[primary URLByAppendingPathComponent:@"Info.plist"].path] ||
+			[fm fileExistsAtPath:[primary URLByAppendingPathComponent:@"GeometryJump"].path] ||
+			[fm fileExistsAtPath:[primary URLByAppendingPathComponent:@"GeometryOriginal"].path]) {
+			AppLog(@"Found GD in LiveContainer at %@", primary.path);
+			return YES;
+		}
+	}
+
+	// Fallback: scan for any .app whose bundle identifier is com.robtop.geometryjump
+	NSError* err = nil;
+	NSArray<NSString*>* contents = [fm contentsOfDirectoryAtPath:bundlePath.path error:&err];
+	if (err || !contents)
+		return NO;
+
+	for (NSString* name in contents) {
+		if (![name hasSuffix:@".app"])
+			continue;
+		NSURL* candidate = [bundlePath URLByAppendingPathComponent:name isDirectory:YES];
+		LCAppInfo* info = [[LCAppInfo alloc] initWithBundlePath:candidate.path];
+		if (info && [info.bundleIdentifier isEqualToString:@"com.robtop.geometryjump"]) {
+			AppLog(@"Found GD in LiveContainer (scanned) at %@", candidate.path);
+			return YES;
+		}
+	}
+	return NO;
+}
+
 + (BOOL)verifyGDAuthenticity {
 	if (![Utils isSandboxed])
 		return YES;
-	return [[Utils getPrefs] boolForKey:@"GDVerified"];
+	// Prefer the saved flag, but also accept a currently present LC-managed install
+	// so users don't get stuck if the flag was never set or was cleared.
+	if ([[Utils getPrefs] boolForKey:@"GDVerified"])
+		return YES;
+	return [VerifyInstall isGDPresentInLiveContainer];
 }
 
 + (BOOL)canLaunchAppWithBundleID:(NSString*)bundleID {
@@ -44,33 +90,31 @@ BOOL hasDoneUpdate = NO;
 
 + (void)startVerifyGDAuth:(RootViewController*)root {
 	UIAlertController* alert = [UIAlertController alertControllerWithTitle:@"launcher.verify-gd.title".loc message:@"launcher.verify-gd.msg".loc
-															preferredStyle:UIAlertControllerStyleAlert];
+											preferredStyle:UIAlertControllerStyleAlert];
 
 	UIAlertAction* launchAction = [UIAlertAction actionWithTitle:@"common.ok".loc style:UIAlertActionStyleDefault handler:^(UIAlertAction* _Nonnull action) {
-		BOOL canLaunch = NO;
-		if (NSClassFromString(@"LCSharedUtils")) {
-			// A private LiveContainer app is not registered with iOS's normal
-			// application workspace. Verify its local bundle metadata instead.
-			NSURL* appURL = [[LCPath bundlePath] URLByAppendingPathComponent:[Utils gdBundleName] isDirectory:YES];
-			NSString* infoPath = [[appURL URLByAppendingPathComponent:@"LCAppInfo.plist"] path];
-			NSDictionary* appInfo = [NSDictionary dictionaryWithContentsOfFile:infoPath];
-			NSString* dataUUID = appInfo[@"LCDataUUID"];
-			BOOL isDirectory = NO;
-			canLaunch = [[NSFileManager defaultManager] fileExistsAtPath:appURL.path isDirectory:&isDirectory]
-				&& isDirectory
-				&& [dataUUID isKindOfClass:[NSString class]]
-				&& dataUUID.length > 0;
-		} else {
-			canLaunch = [VerifyInstall canLaunchAppWithBundleID:@"com.robtop.geometryjump"];
-		}
+		// First try the classic system launch check (works for normal / non-private installs)
+		BOOL canLaunch = [VerifyInstall canLaunchAppWithBundleID:@"com.robtop.geometryjump"];
+
+		// If that fails, check whether Geometry Dash is present as a private app inside LiveContainer
+		BOOL presentInLC = NO;
 		if (!canLaunch) {
+			presentInLC = [VerifyInstall isGDPresentInLiveContainer];
+		}
+
+		if (!canLaunch && !presentInLC) {
 			UIAlertController* resultAlert = [UIAlertController alertControllerWithTitle:@"Error" message:@"launcher.verify-gd.error".loc
-																		  preferredStyle:UIAlertControllerStyleAlert];
+														  preferredStyle:UIAlertControllerStyleAlert];
 			UIAlertAction* okAction = [UIAlertAction actionWithTitle:@"common.ok".loc style:UIAlertActionStyleDefault handler:nil];
 			[resultAlert addAction:okAction];
 			[root presentViewController:resultAlert animated:YES completion:nil];
 			return;
 		}
+
+		if (presentInLC) {
+			AppLog(@"Geometry Dash verified via LiveContainer private app presence (system launch check failed as expected)");
+		}
+
 		NSUserDefaults* prefs = [Utils getPrefs];
 		[prefs setBool:YES forKey:@"UPDATE_AUTOMATICALLY"];
 		[prefs setBool:YES forKey:@"GDVerified"];
@@ -85,15 +129,21 @@ BOOL hasDoneUpdate = NO;
 }
 // after the user installed the patched ipa
 + (BOOL)verifyGDInstalled {
-	BOOL res = NO;
 	if (![Utils isSandboxed])
 		return YES;
-	if ([[NSFileManager defaultManager] fileExistsAtPath:[[LCPath bundlePath] URLByAppendingPathComponent:[Utils gdBundleName] isDirectory:YES].path isDirectory:&res]) {
-		if ([[Utils getPrefs] boolForKey:@"GDNeedsUpdate"])
-			return NO;
-		return res;
-	};
-	return NO;
+
+	if ([[Utils getPrefs] boolForKey:@"GDNeedsUpdate"])
+		return NO;
+
+	// Prefer the standard name the launcher uses
+	BOOL res = NO;
+	NSURL* primary = [[LCPath bundlePath] URLByAppendingPathComponent:[Utils gdBundleName] isDirectory:YES];
+	if ([[NSFileManager defaultManager] fileExistsAtPath:primary.path isDirectory:&res] && res) {
+		return YES;
+	}
+
+	// Fallback for private LiveContainer installs that may use a slightly different relative path
+	return [VerifyInstall isGDPresentInLiveContainer];
 }
 
 // I CANT (return BOOL instead?)
@@ -136,8 +186,8 @@ BOOL hasDoneUpdate = NO;
 					[root updateState];
 					[Utils showError:root
 							   title:[NSString stringWithFormat:
-												   @"Decompressing IPA failed. (Outdated launcher or incomplete download?)\nStatus Code: %d\nView app logs for more information.",
-												   decompError]
+											   @"Decompressing IPA failed. (Outdated launcher or incomplete download?)\nStatus Code: %d\nView app logs for more information.",
+											   decompError]
 							   error:nil];
 					return AppLog(@"Error trying to decompress IPA (Code %d)", decompError);
 				});
@@ -168,13 +218,13 @@ BOOL hasDoneUpdate = NO;
 
 			// sorry i really couldnt figure this out
 			NSArray<LCAppModel*>* sameBundleIdApp = [sharedModel.apps filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(LCAppModel* app, NSDictionary* bindings) {
-																		  return [app.appInfo.bundleIdentifier isEqualToString:newAppInfo.bundleIdentifier];
-																	  }]];
+													  return [app.appInfo.bundleIdentifier isEqualToString:newAppInfo.bundleIdentifier];
+													  }]];
 
 			if (sameBundleIdApp.count == 0) {
 				sameBundleIdApp = [sharedModel.hiddenApps filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(LCAppModel* app, NSDictionary* bindings) {
-															  return [app.appInfo.bundleIdentifier isEqualToString:newAppInfo.bundleIdentifier];
-														  }]];
+													  return [app.appInfo.bundleIdentifier isEqualToString:newAppInfo.bundleIdentifier];
+												  }]];
 			}
 
 			if ([fm fileExistsAtPath:outputFolder.path] || sameBundleIdApp.count > 0) {

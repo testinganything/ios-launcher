@@ -6,6 +6,7 @@
 + (BOOL)verifyGDAuthenticity;
 + (void)startVerifyGDAuth:(RootViewController*)root;
 + (BOOL)canLaunchAppWithBundleID:(NSString*)bundleID;
++ (BOOL)isGDPresentInLiveContainer;
 + (BOOL)verifyGDInstalled;
 + (void)startGDInstall:(RootViewController*)root url:(NSURL*)url;
 + (BOOL)verifyGeodeInstalled;
