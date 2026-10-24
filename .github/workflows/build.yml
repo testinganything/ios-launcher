@@ -72,6 +72,9 @@ jobs:
           path: packages/*.*
   publish:
     name: Publish
+    # Nightly release creates/updates a release and moves the nightly tag.
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     needs: build
     if: github.ref == 'refs/heads/main'
