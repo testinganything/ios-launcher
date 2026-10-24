@@ -1,0 +1,97 @@
+name: Build IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-ipa:
+    name: Build Geode Launcher IPA
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Theos and iOS toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          THEOS_DIR="$RUNNER_TEMP/theos"
+          echo "THEOS=$THEOS_DIR" >> "$GITHUB_ENV"
+
+          git clone --depth=1 --recursive https://github.com/theos/theos.git "$THEOS_DIR"
+
+          ARCH="$(uname -m)"
+          curl --fail --location --silent --show-error \
+            "https://github.com/L1ghtmann/llvm-project/releases/latest/download/iOSToolchain-${ARCH}.tar.xz" \
+            | tar -xJf - -C "$THEOS_DIR/toolchain/"
+
+          if [[ ! -x "$THEOS_DIR/toolchain/linux/iphone/bin/clang" ]]; then
+            echo "::error::The iOS clang toolchain was not installed correctly."
+            exit 1
+          fi
+
+          "$THEOS_DIR/bin/install-sdk" iPhoneOS16.5
+
+      - name: Configure launcher download values
+        shell: bash
+        env:
+          GD_DOWNLOAD: ${{ secrets.GD_DOWNLOAD }}
+          KEYONE: ${{ secrets.KEYONE }}
+          KEYTWO: ${{ secrets.KEYTWO }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$GD_DOWNLOAD" || -z "$KEYONE" || -z "$KEYTWO" ]]; then
+            echo "::warning::One or more of GD_DOWNLOAD, KEYONE, KEYTWO is missing. The IPA will compile, but the launcher's built-in Geometry Dash download/install flow will not work until these values are configured."
+          fi
+
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import subprocess
+
+          path = Path("src/RootViewController.m")
+          source = path.read_text()
+          replacements = {
+              "__DOWNLOAD_LINK__": os.environ.get("GD_DOWNLOAD", ""),
+              "__KEY_PART1__": os.environ.get("KEYONE", ""),
+              "__KEY_PART2__": os.environ.get("KEYTWO", ""),
+          }
+          for old, new in replacements.items():
+              source = source.replace(old, new)
+          path.write_text(source)
+
+          main = Path("src/main.m")
+          source = main.read_text()
+          commit = subprocess.check_output(
+              ["git", "rev-parse", "--short", "HEAD"], text=True
+          ).strip()
+          main.write_text(source.replace("__COMMIT_HASH__", commit))
+          PY
+
+      - name: Build IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          make package FINALPACKAGE=1 STRIP=0
+          test -n "$(find packages -maxdepth 1 -type f -name '*.ipa' -print -quit)"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: GeodeLauncher-IPA
+          path: packages/*.ipa
+          if-no-files-found: error
+          retention-days: 14
