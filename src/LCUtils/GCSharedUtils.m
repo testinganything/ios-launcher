@@ -160,7 +160,7 @@ extern NSBundle* gcMainBundle;
 
 + (void)relaunchApp {
 	[gcUserDefaults setValue:[Utils gdBundleName] forKey:@"selected"];
-	[gcUserDefaults setValue:@"GeometryDash" forKey:@"selectedContainer"];
+	[gcUserDefaults setValue:([GCSharedUtils findDefaultContainerWithBundleId:[Utils gdBundleName]] ?: @"GeometryDash") forKey:@"selectedContainer"];
 	if (NSClassFromString(@"LCSharedUtils")) {
 		[gcUserDefaults synchronize];
 		NSFileManager* fm = [NSFileManager defaultManager];
