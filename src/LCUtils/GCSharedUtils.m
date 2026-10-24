@@ -160,7 +160,7 @@ extern NSBundle* gcMainBundle;
 
 + (void)relaunchApp {
 	[gcUserDefaults setValue:[Utils gdBundleName] forKey:@"selected"];
-	[gcUserDefaults setValue:@"GeometryDash" forKey:@"selectedContainer"];
+	[gcUserDefaults setValue:([GCSharedUtils findDefaultContainerWithBundleId:[Utils gdBundleName]] ?: @"GeometryDash") forKey:@"selectedContainer"];
 	if (NSClassFromString(@"LCSharedUtils")) {
 		[gcUserDefaults synchronize];
 		NSFileManager* fm = [NSFileManager defaultManager];
@@ -479,12 +479,21 @@ extern NSBundle* gcMainBundle;
 }
 
 + (NSString*)findDefaultContainerWithBundleId:(NSString*)bundleId {
-	// find app's default container
-	NSURL* appGroupFolder = [[GCSharedUtils appGroupPath] URLByAppendingPathComponent:@"Geode"];
+	// Prefer the local LiveContainer app directory so private apps are found too.
+	NSURL* localBundleURL = [[LCPath bundlePath] URLByAppendingPathComponent:bundleId];
+	NSString* localInfoPath = [[localBundleURL URLByAppendingPathComponent:@"LCAppInfo.plist"] path];
+	NSDictionary* localInfoDict = [NSDictionary dictionaryWithContentsOfFile:localInfoPath];
+	NSString* localDataUUID = localInfoDict[@"LCDataUUID"];
+	if ([localDataUUID isKindOfClass:[NSString class]] && localDataUUID.length > 0) {
+		return localDataUUID;
+	}
 
-	NSString* bundleInfoPath = [NSString stringWithFormat:@"%@/Applications/%@/LCAppInfo.plist", appGroupFolder.path, bundleId];
-	NSDictionary* infoDict = [NSDictionary dictionaryWithContentsOfFile:bundleInfoPath];
-	return infoDict[@"LCDataUUID"];
+	// Fall back to apps shared between LiveContainer instances.
+	NSURL* appGroupFolder = [[GCSharedUtils appGroupPath] URLByAppendingPathComponent:@"Geode"];
+	NSString* sharedInfoPath = [NSString stringWithFormat:@"%@/Applications/%@/LCAppInfo.plist", appGroupFolder.path, bundleId];
+	NSDictionary* sharedInfoDict = [NSDictionary dictionaryWithContentsOfFile:sharedInfoPath];
+	NSString* sharedDataUUID = sharedInfoDict[@"LCDataUUID"];
+	return ([sharedDataUUID isKindOfClass:[NSString class]] && sharedDataUUID.length > 0) ? sharedDataUUID : nil;
 }
 
 @end

@@ -780,7 +780,7 @@ extern NSString* g_commitHash;
 															  return completionHandler(NO, @"Couldn't sign mods. Please make sure that you imported a certificate in settings.");
 														  }
 														  [[Utils getPrefs] setValue:[Utils gdBundleName] forKey:@"selected"];
-														  [[Utils getPrefs] setValue:@"GeometryDash" forKey:@"selectedContainer"];
+														  [[Utils getPrefs] setValue:([GCSharedUtils findDefaultContainerWithBundleId:[Utils gdBundleName]] ?: @"GeometryDash") forKey:@"selectedContainer"];
 														  completionHandler(YES, nil);
 													  }];
 											  }];
@@ -828,7 +828,7 @@ extern NSString* g_commitHash;
 												return completionHandler(NO, @"Couldn't sign mods. Please make sure that you imported a certificate in settings.");
 											}
 											[[Utils getPrefs] setValue:[Utils gdBundleName] forKey:@"selected"];
-											[[Utils getPrefs] setValue:@"GeometryDash" forKey:@"selectedContainer"];
+											[[Utils getPrefs] setValue:([GCSharedUtils findDefaultContainerWithBundleId:[Utils gdBundleName]] ?: @"GeometryDash") forKey:@"selectedContainer"];
 										completionHandler(YES, nil);
 											}];
 										}];
@@ -1126,7 +1126,7 @@ extern NSString* g_commitHash;
 	[self.launchButton setEnabled:NO];
 	if (([[Utils getPrefs] boolForKey:@"MANUAL_REOPEN"] && [Utils isSandboxed])) {
 		[[Utils getPrefs] setValue:[Utils gdBundleName] forKey:@"selected"];
-		[[Utils getPrefs] setValue:@"GeometryDash" forKey:@"selectedContainer"];
+		[[Utils getPrefs] setValue:([GCSharedUtils findDefaultContainerWithBundleId:[Utils gdBundleName]] ?: @"GeometryDash") forKey:@"selectedContainer"];
 		[[Utils getPrefs] setBool:NO forKey:@"safemode"];
 		NSFileManager* fm = [NSFileManager defaultManager];
 		[fm createFileAtPath:[[LCPath docPath] URLByAppendingPathComponent:@"jitflag"].path contents:[[NSData alloc] init] attributes:@{}];
@@ -1183,7 +1183,7 @@ extern NSString* g_commitHash;
 			if (NSClassFromString(@"LCSharedUtils")) {
 				// since we told the user you cant use TweakLoader
 				[[Utils getPrefs] setValue:[Utils gdBundleName] forKey:@"selected"];
-				[[Utils getPrefs] setValue:@"GeometryDash" forKey:@"selectedContainer"];
+				[[Utils getPrefs] setValue:([GCSharedUtils findDefaultContainerWithBundleId:[Utils gdBundleName]] ?: @"GeometryDash") forKey:@"selectedContainer"];
 				[[Utils getPrefs] setBool:NO forKey:@"safemode"];
 				AppLog(@"Launching Geometry Dash");
 				if (![LCUtils launchToGuestApp]) {
